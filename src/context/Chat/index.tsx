@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
-import PeerConnection from '../../PeerConnection';
 import { v4 as uuid } from 'uuid';
 
 interface MessageData {
@@ -32,17 +31,17 @@ const contextDefaults: ContextType = {
 	error: null,
 };
 
-const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8080/';
+const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
 // const WEBSOCKET_SERVER_IP = 'ws://172.16.13.14:8080/';
 
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
-const id = uuid();
-
 export const ChatProvider = ({ children }) => {
+	const peerConnections = useRef({});
 	const [isEntered, setIsEntered] = useState(false);
 	const [socketMessages, setSocketMessages] = useState([]);
 	const [connection, setConnection] = useState(null);
+	const [localUuid, setLocalUuid] = useState(uuid());
 
 	const [messageData, setMessageData] = useState<MessageData[]>([]);
 	const [error, setError] = useState(null);
@@ -51,7 +50,7 @@ export const ChatProvider = ({ children }) => {
 	const configuration = {
 		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 	};
-	const connections = useRef<PeerConnection[]>([]);
+	const connections = useRef([]);
 
 	const onMessage = async (message) => {
 		const socketData = JSON.parse(message.data);
@@ -68,52 +67,157 @@ export const ChatProvider = ({ children }) => {
 		setSocketMessages((prev) => [...prev, socketData]);
 	};
 
-	useEffect(() => {
-		webSocket.current = new WebSocket(WEBSOCKET_SERVER_IP);
-
-		webSocket.current.onmessage = onMessage;
-
-		webSocket.current.onclose = () => {
-			webSocket.current.close();
-		};
-
-		return () => {
-			webSocket.current.close();
-		};
-	}, []);
-
 	//TODO:
 	const onSend = (inputValue: string) => {
 		try {
 			setMessageData((prev) => [
 				...prev,
-				{ message: inputValue, username: 'ja', senderId: id, timestamp: Date.now() },
+				{ message: inputValue, username: 'ja', senderId: localUuid, timestamp: Date.now() },
 			]);
-			connections.current.forEach((connection) => connection.sendMessage(inputValue));
+			console.log(peerConnections);
+			Object.values(peerConnections.current).forEach((connection) => {
+				console.log('Connection', connection);
+
+				const message = JSON.stringify({
+					senderId: localUuid,
+					username: 'test', //TODO:asd
+					message: inputValue,
+					timestamp: Date.now(),
+				});
+				//@ts-ignore
+				connection?.dataChannel?.send(message);
+			});
+			// connections.current.forEach((connection) => connection.pc.sendMessage(inputValue));
 		} catch (e) {
 			setError(e);
 			console.warn(e);
 		}
 	};
 
+	function checkPeerDisconnect(event, peerUuid) {
+		var state = peerConnections.current[peerUuid].pc.iceConnectionState;
+		console.log(`connection with peer ${peerUuid} ${state}`);
+		if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+			delete peerConnections.current[peerUuid];
+			document.getElementById('videos').removeChild(document.getElementById('remoteVideo_' + peerUuid));
+		}
+	}
+
+	function setUpPeer(peerUuid, displayName, initCall = false) {
+		peerConnections.current[peerUuid] = { displayName: displayName, pc: new RTCPeerConnection(configuration) };
+		peerConnections.current[peerUuid].pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
+
+		peerConnections.current[peerUuid].pc.oniceconnectionstatechange = (event) =>
+			checkPeerDisconnect(event, peerUuid);
+		peerConnections.current[peerUuid].dataChannel = peerConnections.current[peerUuid].pc.createDataChannel('test');
+
+		peerConnections.current[peerUuid].dataChannel.addEventListener('message', (event) =>
+			setMessageData((prev) => [...prev, JSON.parse(event.data)])
+		);
+		peerConnections.current[peerUuid].pc.addEventListener('datachannel', (event) => {
+			peerConnections.current[peerUuid].dataChannel = event.channel;
+		});
+
+		if (initCall) {
+			peerConnections.current[peerUuid].pc
+				.createOffer()
+				.then((description) => createdDescription(description, peerUuid))
+				.catch((e) => console.log({ e }));
+		}
+
+		peerConnections.current[peerUuid].pc.addEventListener('connectionstatechange', () => {
+			if (peerConnections.current[peerUuid].pc.connectionState === 'connected') {
+				console.log('CONNECTED');
+			}
+		});
+	}
+
+	function gotIceCandidate(event, peerUuid) {
+		if (event.candidate != null) {
+			webSocket.current.send(JSON.stringify({ ice: event.candidate, uuid: localUuid, dest: peerUuid }));
+		}
+	}
+
+	function createdDescription(description, peerUuid) {
+		console.log(`got description, peer ${peerUuid}`);
+		peerConnections.current[peerUuid].pc
+			.setLocalDescription(description)
+			.then(function () {
+				webSocket.current.send(
+					JSON.stringify({
+						sdp: peerConnections.current[peerUuid].pc.localDescription,
+						uuid: localUuid,
+						dest: peerUuid,
+					})
+				);
+			})
+			.catch((e) => console.log(e));
+	}
+
+	function gotMessageFromServer(message) {
+		var signal = JSON.parse(message.data);
+		var peerUuid = signal.uuid;
+
+		// Ignore messages that are not for us or from ourselves
+		if (peerUuid == localUuid || (signal.dest != localUuid && signal.dest != 'all')) return;
+
+		if (signal.displayName && signal.dest == 'all') {
+			// set up peer connection object for a newcomer peer
+			setUpPeer(peerUuid, signal.displayName);
+			webSocket.current.send(JSON.stringify({ displayName: localUuid, uuid: localUuid, dest: peerUuid }));
+		} else if (signal.displayName && signal.dest == localUuid) {
+			// initiate call if we are the newcomer peer
+			setUpPeer(peerUuid, signal.displayName, true);
+		} else if (signal.sdp) {
+			peerConnections.current[peerUuid].pc
+				.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+				.then(function () {
+					// Only create answers in response to offers
+					if (signal.sdp.type == 'offer') {
+						peerConnections.current[peerUuid].pc
+							.createAnswer()
+							.then((description) => createdDescription(description, peerUuid))
+							.catch((e) => console.error(e));
+					}
+				})
+				.catch((e) => console.error(e));
+		} else if (signal.ice) {
+			peerConnections.current[peerUuid].pc
+				.addIceCandidate(new RTCIceCandidate(signal.ice))
+				.catch((e) => console.error(e));
+		}
+	}
+
 	const onEnterChat = async () => {
 		setError(null);
-		const connection = new PeerConnection(configuration, webSocket.current, id, '');
 
-		try {
-			await connection.join();
-			connections.current.push(connection);
-			connection.on('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
+		webSocket.current = new WebSocket(WEBSOCKET_SERVER_IP);
 
-			const data = { newuser: 'newuser', type: 'candidate' };
-			webSocket.current.send(JSON.stringify({ sender: id, recepient: '', data, timestamp: Date.now() }));
+		console.log(webSocket);
 
-			setConnection(connection);
-			setIsEntered(true);
-		} catch (e) {
-			setError(e);
-			console.warn(e);
-		}
+		webSocket.current.onmessage = gotMessageFromServer;
+		webSocket.current.onopen = (event) => {
+			console.log({ displayName: localUuid, uuid: localUuid, dest: 'all' });
+			webSocket.current.send(
+				JSON.stringify({ displayName: localUuid || 'aaa', uuid: localUuid || 'bbb', dest: 'all' })
+			);
+		};
+
+		setIsEntered(true);
+		// try {
+		// 	await connection.join();
+		// 	connections.current.push(connection);
+		// 	connection.on('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
+
+		// 	const data = { newuser: 'newuser', type: 'candidate' };
+		// 	webSocket.current.send(JSON.stringify({ sender: id, recepient: '', data, timestamp: Date.now() }));
+
+		// 	setConnection(connection);
+		// 	setIsEntered(true);
+		// } catch (e) {
+		// 	setError(e);
+		// 	console.warn(e);
+		// }
 	};
 
 	const onLeaveChat = () => {
