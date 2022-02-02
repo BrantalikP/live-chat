@@ -16,6 +16,7 @@ class PeerConnection {
 	public signaling: WebSocket;
 	private localId: string;
 	private remoteId: string;
+	private coniguration: RTCConfiguration;
 
 	constructor(configuration: RTCConfiguration, signaling: WebSocket, localId: string, remoteId: string) {
 		this.peerConnection = new RTCPeerConnection(configuration);
@@ -23,14 +24,15 @@ class PeerConnection {
 		this.signaling = signaling;
 		this.localId = localId;
 		this.remoteId = remoteId;
+		this.coniguration = configuration;
 
-		this.dataChannel.addEventListener('message', (event) => console.log('MESSAGE', event.data));
+		this.dataChannel.addEventListener('message', (event) => console.log('TEXT MESSAGE', event.data));
 
 		this.signaling.addEventListener('message', async (message) => {
 			const data: Message = JSON.parse(message.data);
-			console.log({ KURVADATA: data });
+			console.log('RECEIVING', data);
 
-			if (this.peerConnection.connectionState === 'connected') return;
+			if (this.peerConnection.connectionState === 'connected' && data.data.type === 'offer') return;
 
 			if (data.data.type === 'offer') {
 				this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.data));
@@ -48,7 +50,6 @@ class PeerConnection {
 				try {
 					await this.peerConnection.addIceCandidate(data.data.icecandidate);
 				} catch (e) {
-					console.log('ice');
 					console.error(e);
 				}
 			}
@@ -63,6 +64,7 @@ class PeerConnection {
 		});
 
 		this.peerConnection.addEventListener('connectionstatechange', () => {
+			console.log({ CONNECTION_STATE: 'CONNECTED' });
 			if (this.peerConnection.connectionState === 'connected') {
 				console.log('CONNECTED');
 			}

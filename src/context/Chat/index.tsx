@@ -43,7 +43,7 @@ export const ChatProvider = ({ children }) => {
 	const [isEntered, setIsEntered] = useState(false);
 	const [socketMessages, setSocketMessages] = useState([]);
 	const [connection, setConnection] = useState(null);
-	const [channel, setChannel] = useState(null);
+
 	const [messageData, setMessageData] = useState<MessageData[]>([]);
 	const [error, setError] = useState(null);
 
@@ -54,12 +54,18 @@ export const ChatProvider = ({ children }) => {
 	const connections = useRef<PeerConnection[]>([]);
 
 	const onMessage = async (message) => {
-		console.log({ message });
 		const socketData = JSON.parse(message.data);
 
-		setSocketMessages((prev) => [...prev, socketData]);
+		if (socketData.data.type === 'offer') {
+			//TODO: add logic for another use
 
-		console.log({ socketData });
+			connection.setRemoteDescription(new RTCSessionDescription(socketData.data));
+			const answer = await connection.createAnswer();
+			await connection.setLocalDescription(answer);
+			// this.send({ answer });
+		}
+
+		setSocketMessages((prev) => [...prev, socketData]);
 	};
 
 	useEffect(() => {
@@ -90,42 +96,10 @@ export const ChatProvider = ({ children }) => {
 		}
 	};
 
-	const handleDataChannelMessageReceived = ({ data }) => {
-		const message = JSON.parse(data);
-
-		console.log({ TADZ: message });
-		// const { name: user } = message;
-		// let messages = messagesRef.current;
-		// let userMessages = messages[user];
-		// if (userMessages) {
-		//   userMessages = [...userMessages, message];
-		//   let newMessages = Object.assign({}, messages, { [user]: userMessages });
-		//   messagesRef.current = newMessages;
-		//   setMessages(newMessages);
-		// } else {
-		//   let newMessages = Object.assign({}, messages, { [user]: [message] });
-		//   messagesRef.current = newMessages;
-		//   setMessages(newMessages);
-		// }
-	};
-
 	const onEnterChat = async () => {
 		setError(null);
 		const connection = new PeerConnection(configuration, webSocket.current, id, '');
-		let localConnection = new RTCPeerConnection(configuration);
-		localConnection.ondatachannel = (event) => {
-			console.log('Data channel is created!');
-			let receiveChannel = event.channel;
-			receiveChannel.onopen = () => {
-				console.log('Data channel is open and ready to be used.');
-			};
-			receiveChannel.onmessage = handleDataChannelMessageReceived;
 
-			console.log({ receiveChannel });
-			setChannel(receiveChannel);
-		};
-		console.log({ localConnection });
-		setConnection(localConnection);
 		try {
 			await connection.join();
 			connections.current.push(connection);
