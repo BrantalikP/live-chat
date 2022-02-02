@@ -1,54 +1,53 @@
 import React, { useEffect, useState } from 'react';
 import { useChat } from '../context/Chat';
 
+import './styles.css';
+
 const Chat = () => {
-  const { socketMessages, onSend, onEnterChat, onLeaveChat, state } = useChat();
-  const [inputValue, setInputValue] = useState('');
-  const [chatOpen, setChatOpen] = useState(false);
-  const { isEntered } = state;
+	const { socketMessages, onSend, onEnterChat, onLeaveChat, state, messageData, error } = useChat();
+	const [inputValue, setInputValue] = useState('');
+	const [chatOpen, setChatOpen] = useState(false);
+	const { isEntered } = state;
+	console.log({ messageData });
 
-  useEffect(() => {
-    return () => {
-      onLeaveChat();
-    };
-  }, []);
+	useEffect(() => {
+		return () => {
+			onLeaveChat();
+		};
+	}, []);
 
-  const onStartChat = () => {
-    onEnterChat();
-    //TODO: zkontrolovat jestli pripojeni probehlo uspesne
-    setChatOpen(true);
-  };
+	const onStartChat = () => {
+		onEnterChat();
+		console.log('onSTART CHAT');
+		//TODO: zkontrolovat jestli pripojeni probehlo uspesne
+		setChatOpen(true);
+	};
 
-  const onEndChat = () => {
-    onLeaveChat();
-    //TODO: zkontrolovat jestli pripojeni probehlo uspesne
-    setChatOpen(false);
-  };
+	const onEndChat = () => {
+		onLeaveChat();
+		//TODO: zkontrolovat jestli pripojeni probehlo uspesne
+		setChatOpen(false);
+	};
 
-  console.log({ socketMessages });
+	const onMessageSend = () => {
+		onSend(inputValue);
 
-  const onMessageSend = () => {
-    onSend(inputValue);
-    setInputValue('');
-  };
+		setInputValue('');
+	};
 
-  return (
-    <div>
-      <h2>Chat</h2>
-      {chatOpen && (
-        <>
-          <input
-            value={inputValue}
-            onChange={({ target: { value } }) => setInputValue(value)}
-          />
-          <button onClick={onMessageSend}>send</button>
-        </>
-      )}
-      <button onClick={!isEntered ? onStartChat : onEndChat}>
-        {!isEntered ? 'join' : 'leave chat'}
-      </button>
-    </div>
-  );
+	return (
+		<div>
+			<h2>Chat</h2>
+			{error && <div className="errorText">Something went wrong</div>}
+			{isEntered && (
+				<>
+					<input value={inputValue} onChange={({ target: { value } }) => setInputValue(value)} />
+					<button onClick={onMessageSend}>send</button>
+				</>
+			)}
+			<button onClick={!isEntered ? onStartChat : onEndChat}>{!isEntered ? 'join' : 'leave chat'}</button>
+		</div>
+	);
 };
 
 export default Chat;
