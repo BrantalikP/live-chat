@@ -28,12 +28,14 @@ class PeerConnection {
 
 		this.signaling.addEventListener('message', async (message) => {
 			const data: Message = JSON.parse(message.data);
+			console.log({ KURVADATA: data });
+
+			if (this.peerConnection.connectionState === 'connected') return;
 
 			if (data.data.type === 'offer') {
 				this.peerConnection.setRemoteDescription(new RTCSessionDescription(data.data));
 				const answer = await this.peerConnection.createAnswer();
 				await this.peerConnection.setLocalDescription(answer);
-				console.log('ANSW');
 				this.send({ answer });
 			}
 
@@ -46,6 +48,7 @@ class PeerConnection {
 				try {
 					await this.peerConnection.addIceCandidate(data.data.icecandidate);
 				} catch (e) {
+					console.log('ice');
 					console.error(e);
 				}
 			}
@@ -79,7 +82,7 @@ class PeerConnection {
 		this.send(offer);
 	}
 
-	private send(data: unknown) {
+	private send(data: any) {
 		console.log('SENDEING', {
 			sender: this.localId,
 			recepient: this.remoteId,
@@ -90,7 +93,7 @@ class PeerConnection {
 			JSON.stringify({
 				sender: this.localId,
 				recepient: this.remoteId,
-				data,
+				data: data,
 				timestamp: Date.now(),
 			})
 		);
@@ -99,7 +102,7 @@ class PeerConnection {
 	public sendMessage(message: string) {
 		const data = {
 			senderId: this.localId,
-			username: 'test',
+			username: 'test', //TODO:asd
 			message,
 			timestamp: Date.now(),
 		};

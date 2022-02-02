@@ -8,7 +8,6 @@ const Chat = () => {
 	const [inputValue, setInputValue] = useState('');
 	const [chatOpen, setChatOpen] = useState(false);
 	const { isEntered } = state;
-	console.log({ messageData });
 
 	useEffect(() => {
 		return () => {
@@ -39,6 +38,13 @@ const Chat = () => {
 		<div>
 			<h2>Chat</h2>
 			{error && <div className="errorText">Something went wrong</div>}
+			<div>
+				{messageData.map(({ message, username }) => (
+					<div>
+						{username}: {message}
+					</div>
+				))}
+			</div>
 			{isEntered && (
 				<>
 					<input value={inputValue} onChange={({ target: { value } }) => setInputValue(value)} />
