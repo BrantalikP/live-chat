@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from 'react';
 import PeerConnection from '../../PeerConnection';
+import { v4 as uuid } from 'uuid';
 
 interface ContextType {
   onSend: (inputValue: string) => void;
@@ -30,6 +31,8 @@ const WEBSOCKET_SERVER_IP = 'ws://3.126.116.7:8080/';
 
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
+const id = uuid();
+
 export const ChatProvider = ({ children }) => {
   const [isEntered, setIsEntered] = useState(false);
   const [socketMessages, setSocketMessages] = useState([]);
@@ -39,8 +42,6 @@ export const ChatProvider = ({ children }) => {
     iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
   };
   const connections: PeerConnection[] = [];
-
-  const id = '123456'; //TODO:
 
   const onMessage = ({ data }) => {
     const message: {
