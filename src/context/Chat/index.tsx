@@ -96,7 +96,7 @@ export const ChatProvider = ({ children }) => {
 
   const onEnterChat = () => {
     const data = { newuser: 'newuser' }; //TODO:
-
+    console.log({ connections });
     webSocket.current.send(
       JSON.stringify({
         sender: id,
@@ -109,7 +109,7 @@ export const ChatProvider = ({ children }) => {
   };
 
   const onLeaveChat = () => {
-    //TODO: add additional logic ?
+    webSocket.current.close();
     setIsEntered(false);
   };
 
