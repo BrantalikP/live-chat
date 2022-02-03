@@ -4,7 +4,7 @@ import { useChat } from '../context/Chat';
 import './styles.css';
 
 const Chat = () => {
-	const { socketMessages, onSend, onEnterChat, onLeaveChat, state, messageData, error } = useChat();
+	const { onSend, onEnterChat, onLeaveChat, state, messageData, error } = useChat();
 	const [inputValue, setInputValue] = useState('');
 	const [chatOpen, setChatOpen] = useState(false);
 	const { isEntered } = state;
