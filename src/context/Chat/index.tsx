@@ -13,7 +13,6 @@ interface ContextType {
 	onEnterChat: () => void;
 	onLeaveChat: () => void;
 	state: { isEntered: boolean };
-	socketMessages: any[]; //TODO: types
 	messageData: any[]; //TODO: types
 	error: string | null;
 }
@@ -27,33 +26,27 @@ const contextDefaults: ContextType = {
 	onEnterChat: () => {},
 	onLeaveChat: () => {},
 	state: { isEntered: false },
-	socketMessages: [],
 	messageData: [],
 	error: null,
 };
 
 const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
-// const WEBSOCKET_SERVER_IP = 'ws://172.16.13.14:8080/';
+const configuration = {
+	iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+};
 
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
 export const ChatProvider = ({ children }: Props) => {
+	const [isEntered, setIsEntered] = useState(false);
+	const [localUuid] = useState(uuid());
+	const [messageData, setMessageData] = useState<MessageData[]>([]);
+	const [error, setError] = useState<string>('');
+	const webSocket = useRef<WebSocket>(null);
 	const peerConnections = useRef<
 		Record<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>
 	>({});
-	const [isEntered, setIsEntered] = useState(false);
-	const [socketMessages, setSocketMessages] = useState([]);
-	const [localUuid, setLocalUuid] = useState(uuid());
 
-	const [messageData, setMessageData] = useState<MessageData[]>([]);
-	const [error, setError] = useState<string>('');
-
-	const webSocket = useRef<WebSocket>(null);
-	const configuration = {
-		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-	};
-
-	//TODO:
 	const onSend = (inputValue: string) => {
 		try {
 			setMessageData((prev) => [
@@ -62,18 +55,15 @@ export const ChatProvider = ({ children }: Props) => {
 			]);
 			console.log(peerConnections);
 			Object.values(peerConnections.current).forEach((connection) => {
-				console.log('Connection', connection);
-
 				const message = JSON.stringify({
 					senderId: localUuid,
 					username: 'test', //TODO:asd
 					message: inputValue,
 					timestamp: Date.now(),
 				});
-				//@ts-ignore
+
 				connection?.dataChannel?.send(message);
 			});
-			// connections.current.forEach((connection) => connection.pc.sendMessage(inputValue));
 		} catch (e) {
 			setError(e as string);
 			console.warn(e);
@@ -197,7 +187,6 @@ export const ChatProvider = ({ children }: Props) => {
 		onSend,
 		onEnterChat,
 		onLeaveChat,
-		socketMessages,
 		messageData,
 		state: { isEntered },
 		error,
