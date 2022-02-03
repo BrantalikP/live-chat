@@ -49,7 +49,7 @@ export const ChatProvider = ({ children }: Props) => {
 	const [messageData, setMessageData] = useState<MessageData[]>([]);
 	const [error, setError] = useState(null);
 
-	const webSocket = useRef(null);
+	const webSocket = useRef<WebSocket>(null);
 	const configuration = {
 		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 	};
@@ -82,7 +82,7 @@ export const ChatProvider = ({ children }: Props) => {
 		}
 	};
 
-	function checkPeerDisconnect(event, peerUuid) {
+	function checkPeerDisconnect(peerUuid: string) {
 		var state = peerConnections.current[peerUuid].pc.iceConnectionState;
 		console.log(`connection with peer ${peerUuid} ${state}`);
 		if (state === 'failed' || state === 'closed' || state === 'disconnected') {
@@ -96,7 +96,7 @@ export const ChatProvider = ({ children }: Props) => {
 		const dataChannel = pc.createDataChannel('test');
 
 		pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
-		pc.oniceconnectionstatechange = (event) => checkPeerDisconnect(event, peerUuid);
+		pc.oniceconnectionstatechange = () => checkPeerDisconnect(peerUuid);
 		pc.addEventListener('datachannel', (event) => (peerConnections.current[peerUuid].dataChannel = event.channel));
 		pc.addEventListener('connectionstatechange', () => {
 			if (peerConnections.current[peerUuid].pc.connectionState === 'connected') console.log('CONNECTED');
@@ -113,13 +113,13 @@ export const ChatProvider = ({ children }: Props) => {
 		peerConnections.current[peerUuid] = { displayName: displayName, pc, dataChannel };
 	}
 
-	function gotIceCandidate(event, peerUuid) {
+	function gotIceCandidate(event: RTCPeerConnectionIceEvent, peerUuid: string) {
 		if (event.candidate != null) {
 			webSocket.current.send(JSON.stringify({ ice: event.candidate, uuid: localUuid, dest: peerUuid }));
 		}
 	}
 
-	function createdDescription(description, peerUuid) {
+	function createdDescription(description: RTCSessionDescriptionInit, peerUuid: string) {
 		console.log(`got description, peer ${peerUuid}`);
 		peerConnections.current[peerUuid].pc
 			.setLocalDescription(description)
@@ -135,7 +135,7 @@ export const ChatProvider = ({ children }: Props) => {
 			.catch((e) => console.log(e));
 	}
 
-	function gotMessageFromServer(message) {
+	function gotMessageFromServer(message: MessageEvent) {
 		var signal = JSON.parse(message.data);
 		var peerUuid = signal.uuid;
 
@@ -177,7 +177,7 @@ export const ChatProvider = ({ children }: Props) => {
 		console.log(webSocket);
 
 		webSocket.current.onmessage = gotMessageFromServer;
-		webSocket.current.onopen = (event) => {
+		webSocket.current.onopen = () => {
 			console.log({ displayName: localUuid, uuid: localUuid, dest: 'all' });
 			webSocket.current.send(
 				JSON.stringify({ displayName: localUuid || 'aaa', uuid: localUuid || 'bbb', dest: 'all' })
