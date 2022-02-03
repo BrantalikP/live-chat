@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
+import React, { createContext, useContext, useState, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 
 interface MessageData {
@@ -18,9 +18,10 @@ interface ContextType {
 	error: string | null;
 }
 
-interface InputType {
-	value: string;
+interface Props {
+	children: JSX.Element;
 }
+
 const contextDefaults: ContextType = {
 	onSend: () => {},
 	onEnterChat: () => {},
@@ -36,8 +37,10 @@ const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
 
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
-export const ChatProvider = ({ children }) => {
-	const peerConnections = useRef({});
+export const ChatProvider = ({ children }: Props) => {
+	const peerConnections = useRef<
+		Record<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>
+	>({});
 	const [isEntered, setIsEntered] = useState(false);
 	const [socketMessages, setSocketMessages] = useState([]);
 	const [connection, setConnection] = useState(null);
@@ -51,21 +54,6 @@ export const ChatProvider = ({ children }) => {
 		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 	};
 	const connections = useRef([]);
-
-	const onMessage = async (message) => {
-		const socketData = JSON.parse(message.data);
-
-		if (socketData.data.type === 'offer') {
-			//TODO: add logic for another use
-
-			connection.setRemoteDescription(new RTCSessionDescription(socketData.data));
-			const answer = await connection.createAnswer();
-			await connection.setLocalDescription(answer);
-			// this.send({ answer });
-		}
-
-		setSocketMessages((prev) => [...prev, socketData]);
-	};
 
 	//TODO:
 	const onSend = (inputValue: string) => {
@@ -103,33 +91,26 @@ export const ChatProvider = ({ children }) => {
 		}
 	}
 
-	function setUpPeer(peerUuid, displayName, initCall = false) {
-		peerConnections.current[peerUuid] = { displayName: displayName, pc: new RTCPeerConnection(configuration) };
-		peerConnections.current[peerUuid].pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
+	function setUpPeer(peerUuid: string, displayName: string, initCall = false) {
+		const pc = new RTCPeerConnection(configuration);
+		const dataChannel = pc.createDataChannel('test');
 
-		peerConnections.current[peerUuid].pc.oniceconnectionstatechange = (event) =>
-			checkPeerDisconnect(event, peerUuid);
-		peerConnections.current[peerUuid].dataChannel = peerConnections.current[peerUuid].pc.createDataChannel('test');
-
-		peerConnections.current[peerUuid].dataChannel.addEventListener('message', (event) =>
-			setMessageData((prev) => [...prev, JSON.parse(event.data)])
-		);
-		peerConnections.current[peerUuid].pc.addEventListener('datachannel', (event) => {
-			peerConnections.current[peerUuid].dataChannel = event.channel;
+		pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
+		pc.oniceconnectionstatechange = (event) => checkPeerDisconnect(event, peerUuid);
+		pc.addEventListener('datachannel', (event) => (peerConnections.current[peerUuid].dataChannel = event.channel));
+		pc.addEventListener('connectionstatechange', () => {
+			if (peerConnections.current[peerUuid].pc.connectionState === 'connected') console.log('CONNECTED');
 		});
 
+		dataChannel.addEventListener('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
+
 		if (initCall) {
-			peerConnections.current[peerUuid].pc
-				.createOffer()
+			pc.createOffer()
 				.then((description) => createdDescription(description, peerUuid))
 				.catch((e) => console.log({ e }));
 		}
 
-		peerConnections.current[peerUuid].pc.addEventListener('connectionstatechange', () => {
-			if (peerConnections.current[peerUuid].pc.connectionState === 'connected') {
-				console.log('CONNECTED');
-			}
-		});
+		peerConnections.current[peerUuid] = { displayName: displayName, pc, dataChannel };
 	}
 
 	function gotIceCandidate(event, peerUuid) {
@@ -204,20 +185,6 @@ export const ChatProvider = ({ children }) => {
 		};
 
 		setIsEntered(true);
-		// try {
-		// 	await connection.join();
-		// 	connections.current.push(connection);
-		// 	connection.on('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
-
-		// 	const data = { newuser: 'newuser', type: 'candidate' };
-		// 	webSocket.current.send(JSON.stringify({ sender: id, recepient: '', data, timestamp: Date.now() }));
-
-		// 	setConnection(connection);
-		// 	setIsEntered(true);
-		// } catch (e) {
-		// 	setError(e);
-		// 	console.warn(e);
-		// }
 	};
 
 	const onLeaveChat = () => {
