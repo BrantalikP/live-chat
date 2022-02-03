@@ -44,8 +44,8 @@ export const ChatProvider = ({ children }: Props) => {
 	const [error, setError] = useState<string>('');
 	const webSocket = useRef<WebSocket>(null);
 	const peerConnections = useRef<
-		Record<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>
-	>({});
+		Map<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>
+	>(new Map());
 
 	const onSend = (inputValue: string) => {
 		try {
@@ -54,7 +54,7 @@ export const ChatProvider = ({ children }: Props) => {
 				{ message: inputValue, username: 'ja', senderId: localUuid, timestamp: Date.now() },
 			]);
 			console.log(peerConnections);
-			Object.values(peerConnections.current).forEach((connection) => {
+			peerConnections.current.forEach((connection) => {
 				const message = JSON.stringify({
 					senderId: localUuid,
 					username: 'test', //TODO:asd
@@ -71,10 +71,10 @@ export const ChatProvider = ({ children }: Props) => {
 	};
 
 	function checkPeerDisconnect(peerUuid: string) {
-		var state = peerConnections.current[peerUuid].pc.iceConnectionState;
+		var state = peerConnections.current.get(peerUuid)?.pc.iceConnectionState;
 		console.log(`connection with peer ${peerUuid} ${state}`);
 		if (state === 'failed' || state === 'closed' || state === 'disconnected') {
-			delete peerConnections.current[peerUuid];
+			peerConnections.current.delete(peerUuid);
 		}
 	}
 
@@ -84,9 +84,11 @@ export const ChatProvider = ({ children }: Props) => {
 
 		pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
 		pc.oniceconnectionstatechange = () => checkPeerDisconnect(peerUuid);
-		pc.addEventListener('datachannel', (event) => (peerConnections.current[peerUuid].dataChannel = event.channel));
+		pc.addEventListener('datachannel', (event) =>
+			Object.defineProperty(peerConnections.current.get(peerUuid), 'dataChannel', { value: event.channel })
+		);
 		pc.addEventListener('connectionstatechange', () => {
-			if (peerConnections.current[peerUuid].pc.connectionState === 'connected') console.log('CONNECTED');
+			if (peerConnections.current.get(peerUuid)?.pc.connectionState === 'connected') console.log('CONNECTED');
 		});
 
 		dataChannel.addEventListener('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
@@ -97,7 +99,7 @@ export const ChatProvider = ({ children }: Props) => {
 				.catch((e) => console.log({ e }));
 		}
 
-		peerConnections.current[peerUuid] = { displayName: displayName, pc, dataChannel };
+		peerConnections.current.set(peerUuid, { displayName: displayName, pc, dataChannel });
 	}
 
 	function gotIceCandidate(event: RTCPeerConnectionIceEvent, peerUuid: string) {
@@ -108,12 +110,13 @@ export const ChatProvider = ({ children }: Props) => {
 
 	function createdDescription(description: RTCSessionDescriptionInit, peerUuid: string) {
 		console.log(`got description, peer ${peerUuid}`);
-		peerConnections.current[peerUuid].pc
-			.setLocalDescription(description)
+		peerConnections.current
+			.get(peerUuid)
+			?.pc.setLocalDescription(description)
 			.then(function () {
 				webSocket.current?.send(
 					JSON.stringify({
-						sdp: peerConnections.current[peerUuid].pc.localDescription,
+						sdp: peerConnections.current.get(peerUuid)?.pc.localDescription,
 						uuid: localUuid,
 						dest: peerUuid,
 					})
@@ -137,21 +140,24 @@ export const ChatProvider = ({ children }: Props) => {
 			// initiate call if we are the newcomer peer
 			setUpPeer(peerUuid, signal.displayName, true);
 		} else if (signal.sdp) {
-			peerConnections.current[peerUuid].pc
-				.setRemoteDescription(new RTCSessionDescription(signal.sdp))
+			peerConnections.current
+				.get(peerUuid)
+				?.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp))
 				.then(function () {
 					// Only create answers in response to offers
 					if (signal.sdp.type == 'offer') {
-						peerConnections.current[peerUuid].pc
-							.createAnswer()
+						peerConnections.current
+							.get(peerUuid)
+							?.pc.createAnswer()
 							.then((description) => createdDescription(description, peerUuid))
 							.catch((e) => console.error(e));
 					}
 				})
 				.catch((e) => console.error(e));
 		} else if (signal.ice) {
-			peerConnections.current[peerUuid].pc
-				.addIceCandidate(new RTCIceCandidate(signal.ice))
+			peerConnections.current
+				.get(peerUuid)
+				?.pc.addIceCandidate(new RTCIceCandidate(signal.ice))
 				.catch((e) => console.error(e));
 		}
 	}
@@ -177,7 +183,7 @@ export const ChatProvider = ({ children }: Props) => {
 
 	const onLeaveChat = () => {
 		webSocket.current?.close();
-		Object.values(peerConnections.current).forEach((connection) => {
+		peerConnections.current.forEach((connection) => {
 			connection.pc.close();
 		});
 		setIsEntered(false);
