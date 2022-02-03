@@ -43,17 +43,15 @@ export const ChatProvider = ({ children }: Props) => {
 	>({});
 	const [isEntered, setIsEntered] = useState(false);
 	const [socketMessages, setSocketMessages] = useState([]);
-	const [connection, setConnection] = useState(null);
 	const [localUuid, setLocalUuid] = useState(uuid());
 
 	const [messageData, setMessageData] = useState<MessageData[]>([]);
-	const [error, setError] = useState(null);
+	const [error, setError] = useState<string>('');
 
 	const webSocket = useRef<WebSocket>(null);
 	const configuration = {
 		iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 	};
-	const connections = useRef([]);
 
 	//TODO:
 	const onSend = (inputValue: string) => {
@@ -77,7 +75,7 @@ export const ChatProvider = ({ children }: Props) => {
 			});
 			// connections.current.forEach((connection) => connection.pc.sendMessage(inputValue));
 		} catch (e) {
-			setError(e);
+			setError(e as string);
 			console.warn(e);
 		}
 	};
@@ -87,7 +85,6 @@ export const ChatProvider = ({ children }: Props) => {
 		console.log(`connection with peer ${peerUuid} ${state}`);
 		if (state === 'failed' || state === 'closed' || state === 'disconnected') {
 			delete peerConnections.current[peerUuid];
-			document.getElementById('videos').removeChild(document.getElementById('remoteVideo_' + peerUuid));
 		}
 	}
 
@@ -115,7 +112,7 @@ export const ChatProvider = ({ children }: Props) => {
 
 	function gotIceCandidate(event: RTCPeerConnectionIceEvent, peerUuid: string) {
 		if (event.candidate != null) {
-			webSocket.current.send(JSON.stringify({ ice: event.candidate, uuid: localUuid, dest: peerUuid }));
+			webSocket.current?.send(JSON.stringify({ ice: event.candidate, uuid: localUuid, dest: peerUuid }));
 		}
 	}
 
@@ -124,7 +121,7 @@ export const ChatProvider = ({ children }: Props) => {
 		peerConnections.current[peerUuid].pc
 			.setLocalDescription(description)
 			.then(function () {
-				webSocket.current.send(
+				webSocket.current?.send(
 					JSON.stringify({
 						sdp: peerConnections.current[peerUuid].pc.localDescription,
 						uuid: localUuid,
@@ -145,7 +142,7 @@ export const ChatProvider = ({ children }: Props) => {
 		if (signal.displayName && signal.dest == 'all') {
 			// set up peer connection object for a newcomer peer
 			setUpPeer(peerUuid, signal.displayName);
-			webSocket.current.send(JSON.stringify({ displayName: localUuid, uuid: localUuid, dest: peerUuid }));
+			webSocket.current?.send(JSON.stringify({ displayName: localUuid, uuid: localUuid, dest: peerUuid }));
 		} else if (signal.displayName && signal.dest == localUuid) {
 			// initiate call if we are the newcomer peer
 			setUpPeer(peerUuid, signal.displayName, true);
@@ -170,8 +167,9 @@ export const ChatProvider = ({ children }: Props) => {
 	}
 
 	const onEnterChat = async () => {
-		setError(null);
+		setError('');
 
+		//@ts-ignore
 		webSocket.current = new WebSocket(WEBSOCKET_SERVER_IP);
 
 		console.log(webSocket);
@@ -179,7 +177,7 @@ export const ChatProvider = ({ children }: Props) => {
 		webSocket.current.onmessage = gotMessageFromServer;
 		webSocket.current.onopen = () => {
 			console.log({ displayName: localUuid, uuid: localUuid, dest: 'all' });
-			webSocket.current.send(
+			webSocket.current?.send(
 				JSON.stringify({ displayName: localUuid || 'aaa', uuid: localUuid || 'bbb', dest: 'all' })
 			);
 		};
@@ -188,9 +186,9 @@ export const ChatProvider = ({ children }: Props) => {
 	};
 
 	const onLeaveChat = () => {
-		webSocket.current.close();
-		connections.current.forEach((connection) => {
-			connection.peerConnection.close();
+		webSocket.current?.close();
+		Object.values(peerConnections.current).forEach((connection) => {
+			connection.pc.close();
 		});
 		setIsEntered(false);
 	};
