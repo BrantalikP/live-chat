@@ -1,7 +1,7 @@
 {
   "name": "live-chat",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "publishConfig": {
     "registry": "https://npm.pkg.github.com/@BrantalikP"
   },
