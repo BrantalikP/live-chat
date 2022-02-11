@@ -16,7 +16,7 @@ const Chat = () => {
 	}, []);
 
 	const onStartChat = () => {
-		onEnterChat();
+		onEnterChat({ name: 'Placeholder', avatar: '' });
 		console.log('onSTART CHAT');
 		//TODO: zkontrolovat jestli pripojeni probehlo uspesne
 		setChatOpen(true);
