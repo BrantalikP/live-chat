@@ -28,6 +28,8 @@ interface ContextType {
 
 interface Props {
 	children: JSX.Element;
+	signalingServer: string;
+	iceServers: { urls: string }[];
 }
 
 type PeerConnection = Map<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>;
@@ -43,17 +45,12 @@ const contextDefaults: ContextType = {
 	userCounter: 0,
 };
 
-const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
-const configuration = {
-	iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-};
-
 const DEFAULT_AVATAR =
 	'https://cdn.backstage-api.com?key=backstage-cms-production-uploads/1000x1000/5e0ad1b0-515e-11e9-a7ed-371ac744bd33/profile-images/img/5c55a618-e55a-4c68-85ed-55afa4b8e2fb-image%201@2x.png';
 
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
-export const ChatProvider = ({ children }: Props) => {
+export const ChatProvider = ({ children, signalingServer, iceServers }: Props) => {
 	const [isEntered, setIsEntered] = useState(false);
 	const [userCounter, setUserCounter] = useState(1);
 	const [localUuid] = useState(uuid());
@@ -62,10 +59,6 @@ export const ChatProvider = ({ children }: Props) => {
 	const [user, setUser] = useState({ name: 'test', avatar: DEFAULT_AVATAR });
 	const webSocket = useRef<WebSocket>(null);
 	const peerConnections = useRef<PeerConnection>(new Map());
-
-	useEffect(() => {
-		setUserCounter(peerConnections.current.size);
-	}, [peerConnections]);
 
 	const onSendEventMessage = (peer, event: Event) => {
 		// FIXME: OHACK
@@ -129,32 +122,34 @@ export const ChatProvider = ({ children }: Props) => {
 	}
 
 	function setUpPeer(peerUuid: string, displayName: string, initCall = false) {
-		const pc = new RTCPeerConnection(configuration);
-		const dataChannel = pc.createDataChannel('test');
+		const configuration = { iceServers };
+		const dataChannelId = uuid();
+		const peerConnection = new RTCPeerConnection(configuration);
+		const dataChannel = peerConnection.createDataChannel(dataChannelId);
 
-		pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
-		pc.oniceconnectionstatechange = () => checkPeerDisconnect(peerUuid);
-		pc.addEventListener('datachannel', (event) =>
+		peerConnection.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
+		peerConnection.oniceconnectionstatechange = () => checkPeerDisconnect(peerUuid);
+		peerConnection.addEventListener('datachannel', (event) =>
 			Object.defineProperty(peerConnections.current.get(peerUuid), 'dataChannel', {
 				value: event.channel,
 			})
 		);
-		pc.addEventListener('connectionstatechange', () => {
+		peerConnection.addEventListener('connectionstatechange', () => {
 			if (peerConnections.current.get(peerUuid)?.pc.connectionState === 'connected')
 				onSendEventMessage(peerConnections.current.get(peerUuid), Event.HAS_JOINED);
-			setUserCounter((prev) => prev + 1);
 			console.log('CONNECTED');
 		});
 
 		dataChannel.addEventListener('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
 
 		if (initCall) {
-			pc.createOffer()
+			peerConnection
+				.createOffer()
 				.then((description) => createdDescription(description, peerUuid))
 				.catch((e) => console.log({ e }));
 		}
 
-		peerConnections.current.set(peerUuid, { displayName, pc, dataChannel });
+		peerConnections.current.set(peerUuid, { displayName, pc: peerConnection, dataChannel });
 	}
 
 	function gotIceCandidate(event: RTCPeerConnectionIceEvent, peerUuid: string) {
@@ -219,12 +214,9 @@ export const ChatProvider = ({ children }: Props) => {
 
 	const onEnterChat = async ({ name, avatar }) => {
 		setError('');
-		console.log('hasEnterd', name);
 		setUser({ name, avatar });
 		// @ts-ignore
-		webSocket.current = new WebSocket(WEBSOCKET_SERVER_IP);
-
-		console.log(webSocket);
+		webSocket.current = new WebSocket(signalingServer);
 
 		webSocket.current.onmessage = gotMessageFromServer;
 		webSocket.current.onopen = () => {
@@ -259,7 +251,6 @@ export const ChatProvider = ({ children }: Props) => {
 		state: { isEntered },
 		error,
 	};
+
 	return <ChatContext.Provider value={chatContext}>{children}</ChatContext.Provider>;
 };
-
-export const useChat = () => useContext(ChatContext);

@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useChat } from '../context/Chat';
+import { useChat } from '../hooks';
 
 import './styles.css';
 
 const Chat = () => {
-	const { onSend, onEnterChat, onLeaveChat, state, messageData, error } = useChat();
+	const { onSend, onEnterChat, onLeaveChat, state, messageData, error, userCounter } = useChat();
 	const [inputValue, setInputValue] = useState('');
 	const [chatOpen, setChatOpen] = useState(false);
 	const { isEntered } = state;
