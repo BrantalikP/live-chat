@@ -43,7 +43,6 @@ const contextDefaults: ContextType = {
 	userCounter: 0,
 };
 
-// const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
 const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
 const configuration = {
 	iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
