@@ -1,19 +1,28 @@
-import React, { createContext, useContext, useState, useRef } from 'react';
+import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { v4 as uuid } from 'uuid';
 
-interface MessageData {
+export enum Event {
+	HAS_JOINED = 'hasJoined',
+	HAS_LEFT = 'hasLeft',
+}
+export interface MessageData {
 	message: string;
+	id: string;
 	username: string;
 	senderId: string;
 	timestamp: number;
+	avatar: string;
+	event?: Event;
 }
 
 interface ContextType {
 	onSend: (inputValue: string) => void;
-	onEnterChat: () => void;
+	onEnterChat: ({ name, avatar }: { name: string; avatar: string }) => void;
 	onLeaveChat: () => void;
 	state: { isEntered: boolean };
-	messageData: any[]; //TODO: types
+	userCounter: Number;
+	messageData: MessageData[]; // TODO: types
+	connections: PeerConnection;
 	error: string | null;
 }
 
@@ -21,13 +30,17 @@ interface Props {
 	children: JSX.Element;
 }
 
+type PeerConnection = Map<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>;
+
 const contextDefaults: ContextType = {
 	onSend: () => {},
 	onEnterChat: () => {},
 	onLeaveChat: () => {},
 	state: { isEntered: false },
+	connections: new Map(),
 	messageData: [],
 	error: null,
+	userCounter: 0,
 };
 
 const WEBSOCKET_SERVER_IP = 'ws://3.71.110.139:8001/';
@@ -35,31 +48,66 @@ const configuration = {
 	iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
+const DEFAULT_AVATAR =
+	'https://cdn.backstage-api.com?key=backstage-cms-production-uploads/1000x1000/5e0ad1b0-515e-11e9-a7ed-371ac744bd33/profile-images/img/5c55a618-e55a-4c68-85ed-55afa4b8e2fb-image%201@2x.png';
+
 export const ChatContext = createContext<ContextType>(contextDefaults);
 
 export const ChatProvider = ({ children }: Props) => {
 	const [isEntered, setIsEntered] = useState(false);
+	const [userCounter, setUserCounter] = useState(1);
 	const [localUuid] = useState(uuid());
 	const [messageData, setMessageData] = useState<MessageData[]>([]);
 	const [error, setError] = useState<string>('');
+	const [user, setUser] = useState({ name: 'test', avatar: DEFAULT_AVATAR });
 	const webSocket = useRef<WebSocket>(null);
-	const peerConnections = useRef<
-		Map<string, { displayName: string; pc: RTCPeerConnection; dataChannel: RTCDataChannel }>
-	>(new Map());
+	const peerConnections = useRef<PeerConnection>(new Map());
+
+	useEffect(() => {
+		setUserCounter(peerConnections.current.size);
+	}, [peerConnections]);
+
+	const onSendEventMessage = (peer, event: Event) => {
+		// FIXME: OHACK
+		if (peer.displayName.length <= 20) {
+			setMessageData((prev) => [
+				...prev,
+				{
+					id: uuid(),
+					senderId: localUuid,
+					username: peer.displayName,
+					timestamp: Date.now(),
+					avatar: user.avatar,
+					message: '',
+					event,
+				},
+			]);
+		}
+	};
 
 	const onSend = (inputValue: string) => {
 		try {
+			const messageId = uuid();
 			setMessageData((prev) => [
 				...prev,
-				{ message: inputValue, username: 'ja', senderId: localUuid, timestamp: Date.now() },
+				{
+					id: messageId,
+					message: inputValue,
+					username: 'Me',
+					senderId: localUuid,
+					timestamp: Date.now(),
+					avatar: user.avatar,
+				},
 			]);
-			console.log(peerConnections);
+
 			peerConnections.current.forEach((connection) => {
 				const message = JSON.stringify({
+					id: messageId,
 					senderId: localUuid,
-					username: 'test', //TODO:asd
+					username: user.name,
 					message: inputValue,
 					timestamp: Date.now(),
+					avatar: user.avatar,
 				});
 
 				connection?.dataChannel?.send(message);
@@ -71,9 +119,11 @@ export const ChatProvider = ({ children }: Props) => {
 	};
 
 	function checkPeerDisconnect(peerUuid: string) {
-		var state = peerConnections.current.get(peerUuid)?.pc.iceConnectionState;
+		const state = peerConnections.current.get(peerUuid)?.pc.iceConnectionState;
 		console.log(`connection with peer ${peerUuid} ${state}`);
 		if (state === 'failed' || state === 'closed' || state === 'disconnected') {
+			setUserCounter((prev) => prev - 1);
+			onSendEventMessage(peerConnections.current.get(peerUuid), Event.HAS_LEFT);
 			peerConnections.current.delete(peerUuid);
 		}
 	}
@@ -85,10 +135,15 @@ export const ChatProvider = ({ children }: Props) => {
 		pc.onicecandidate = (event) => gotIceCandidate(event, peerUuid);
 		pc.oniceconnectionstatechange = () => checkPeerDisconnect(peerUuid);
 		pc.addEventListener('datachannel', (event) =>
-			Object.defineProperty(peerConnections.current.get(peerUuid), 'dataChannel', { value: event.channel })
+			Object.defineProperty(peerConnections.current.get(peerUuid), 'dataChannel', {
+				value: event.channel,
+			})
 		);
 		pc.addEventListener('connectionstatechange', () => {
-			if (peerConnections.current.get(peerUuid)?.pc.connectionState === 'connected') console.log('CONNECTED');
+			if (peerConnections.current.get(peerUuid)?.pc.connectionState === 'connected')
+				onSendEventMessage(peerConnections.current.get(peerUuid), Event.HAS_JOINED);
+			setUserCounter((prev) => prev + 1);
+			console.log('CONNECTED');
 		});
 
 		dataChannel.addEventListener('message', (event) => setMessageData((prev) => [...prev, JSON.parse(event.data)]));
@@ -99,7 +154,7 @@ export const ChatProvider = ({ children }: Props) => {
 				.catch((e) => console.log({ e }));
 		}
 
-		peerConnections.current.set(peerUuid, { displayName: displayName, pc, dataChannel });
+		peerConnections.current.set(peerUuid, { displayName, pc, dataChannel });
 	}
 
 	function gotIceCandidate(event: RTCPeerConnectionIceEvent, peerUuid: string) {
@@ -126,8 +181,8 @@ export const ChatProvider = ({ children }: Props) => {
 	}
 
 	function gotMessageFromServer(message: MessageEvent) {
-		var signal = JSON.parse(message.data);
-		var peerUuid = signal.uuid;
+		const signal = JSON.parse(message.data);
+		const peerUuid = signal.uuid;
 
 		// Ignore messages that are not for us or from ourselves
 		if (peerUuid == localUuid || (signal.dest != localUuid && signal.dest != 'all')) return;
@@ -162,19 +217,24 @@ export const ChatProvider = ({ children }: Props) => {
 		}
 	}
 
-	const onEnterChat = async () => {
+	const onEnterChat = async ({ name, avatar }) => {
 		setError('');
-
-		//@ts-ignore
+		console.log('hasEnterd', name);
+		setUser({ name, avatar });
+		// @ts-ignore
 		webSocket.current = new WebSocket(WEBSOCKET_SERVER_IP);
 
 		console.log(webSocket);
 
 		webSocket.current.onmessage = gotMessageFromServer;
 		webSocket.current.onopen = () => {
-			console.log({ displayName: localUuid, uuid: localUuid, dest: 'all' });
+			console.log({ displayName: name, uuid: localUuid, dest: 'all' });
 			webSocket.current?.send(
-				JSON.stringify({ displayName: localUuid || 'aaa', uuid: localUuid || 'bbb', dest: 'all' })
+				JSON.stringify({
+					displayName: name || 'aaa',
+					uuid: localUuid || 'bbb',
+					dest: 'all',
+				})
 			);
 		};
 
@@ -194,6 +254,8 @@ export const ChatProvider = ({ children }: Props) => {
 		onEnterChat,
 		onLeaveChat,
 		messageData,
+		userCounter,
+		connections: peerConnections.current,
 		state: { isEntered },
 		error,
 	};
